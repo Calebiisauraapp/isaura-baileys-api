@@ -339,10 +339,17 @@ async function getSession(userId, onQR) {
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   let qrCode = null;
+  let qrCallback = null;
 
   const sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
+    logger: {
+      level: 'error', // Reduzir logs para evitar spam
+    },
+    browser: ['Isaura WhatsApp', 'Chrome', '1.0.0'],
+    connectTimeoutMs: 60000, // Aumentar timeout para 60 segundos
+    qrTimeout: 60000, // Timeout do QR Code para 60 segundos
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -350,15 +357,27 @@ async function getSession(userId, onQR) {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
     
-    if (qr && onQR) {
+    if (qr) {
+      console.log('QR Code recebido do WhatsApp');
       qrCode = qr;
-      onQR(qr);
+      if (onQR) {
+        qrCallback = onQR;
+        onQR(qr);
+      }
     }
     
     if (connection === 'close') {
+      console.log('Conexão WhatsApp fechada');
       if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-        getSession(userId, onQR);
+        console.log('Tentando reconectar...');
+        setTimeout(() => {
+          getSession(userId, onQR);
+        }, 5000);
       }
+    }
+
+    if (connection === 'open') {
+      console.log('Conexão WhatsApp estabelecida');
     }
   });
 
@@ -391,7 +410,7 @@ async function getSession(userId, onQR) {
     }
   });
 
-  sessions[userId] = { sock, qrCode };
+  sessions[userId] = { sock, qrCode, qrCallback };
   return sessions[userId];
 }
 
@@ -655,6 +674,22 @@ cron.schedule('*/5 * * * *', sendAutomaticReminders); // A cada 5 minutos
 
 // Endpoints da API
 
+// Endpoint raiz
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'API Baileys WhatsApp - Isaura',
+    version: '1.0.0',
+    status: 'online',
+    endpoints: {
+      'POST /api/qrcode': 'Gerar QR Code para conectar WhatsApp',
+      'GET /api/status/:userId': 'Verificar status da conexão',
+      'POST /api/send': 'Enviar mensagem WhatsApp',
+      'POST /api/disconnect': 'Desconectar WhatsApp',
+      'GET /health': 'Health check da API'
+    }
+  });
+});
+
 // Gerar QR Code
 app.post('/api/qrcode', async (req, res) => {
   try {
@@ -663,13 +698,28 @@ app.post('/api/qrcode', async (req, res) => {
       return res.status(400).json({ error: 'userId é obrigatório' });
     }
 
+    console.log(`Gerando QR Code para usuário: ${userId}`);
+
     let qrBase64 = null;
+    let qrGenerated = false;
+
     const session = await getSession(userId, async (qr) => {
-      qrBase64 = await qrcode.toDataURL(qr);
+      try {
+        console.log('QR Code recebido, convertendo para base64...');
+        qrBase64 = await qrcode.toDataURL(qr);
+        qrGenerated = true;
+        console.log('QR Code convertido com sucesso');
+      } catch (error) {
+        console.error('Erro ao converter QR Code:', error);
+      }
     });
+
+    // Aguardar um pouco para o QR Code ser gerado
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Se já estiver conectado
     if (session.sock.user) {
+      console.log('Usuário já conectado');
       return res.json({ 
         success: true,
         status: 'conectado',
@@ -678,11 +728,23 @@ app.post('/api/qrcode', async (req, res) => {
     }
 
     // Se tem QR Code
-    if (qrBase64) {
+    if (qrBase64 && qrGenerated) {
+      console.log('QR Code gerado com sucesso');
       return res.json({ 
         success: true,
         qrCode: qrBase64,
         userId: userId 
+      });
+    }
+
+    console.log('QR Code não foi gerado, tentando novamente...');
+    
+    // Tentar novamente se não foi gerado
+    if (!qrGenerated) {
+      return res.json({ 
+        success: false,
+        error: 'QR Code não foi gerado. Tente novamente em alguns segundos.',
+        retry: true
       });
     }
 
