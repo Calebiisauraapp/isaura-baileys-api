@@ -30,7 +30,7 @@ app.use(express.json());
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://auyjantqdiacpsyznikw.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1eWphbnRxZGlhY3BzeXpuaWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2MjIyNzgsImV4cCI6MjA2ODE5ODI3OH0.jV-FktGEV6mdv0B9dIY-LXodXEa0oeRs5EULup5pWRA';
 const GOOGLE_AI_API_KEY = process.env.GOOGLE_AI_API_KEY || 'AIzaSyDOJuXfE9qg__A9f_o0ylVIdoc2GPtLH6c';
-const GOOGLE_AI_MODEL = process.env.GOOGLE_AI_MODEL || 'gemini-2.0-flash-exp';
+const GOOGLE_AI_MODEL = process.env.GOOGLE_AI_MODEL || 'gemini-1.5-flash';
 
 // Gerenciador de sessões por usuário
 const sessions = {};
