@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, isJidBroadcast } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, isJidBroadcast, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const express = require('express');
 const qrcode = require('qrcode');
 const fs = require('fs');
@@ -10,6 +10,17 @@ const moment = require('moment');
 require('dotenv').config();
 const { randomBytes } = require('crypto');
 const { unixTimestampSeconds } = require('@whiskeysockets/baileys/lib/Utils/generics');
+
+// Logger para debug
+const logger = {
+  level: 'silent', // Desabilitar logs verbosos do Baileys
+  trace: () => {},
+  debug: () => {},
+  info: () => {},
+  warn: console.warn,
+  error: console.error,
+  fatal: console.error,
+};
 
 const app = express();
 app.use(cors());
@@ -353,6 +364,15 @@ async function getSession(userId, onQR) {
     maxRetries: 3,
     emitOwnEvents: false,
     shouldIgnoreJid: jid => isJidBroadcast(jid),
+    // Configurações para evitar erro 515
+    keepAliveIntervalMs: 25000,
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    fireInitQueries: true,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger),
+    },
     patchMessageBeforeSending: (msg) => {
       const requiresPatch = !!(
         msg.buttonsMessage 
@@ -398,17 +418,28 @@ async function getSession(userId, onQR) {
     
     if (connection === 'close') {
       console.log('Conexão WhatsApp fechada');
-      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      console.log('Código de desconexão:', statusCode);
+      
+      // Não reconectar se foi logout manual ou erro 515
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut && 
+                             statusCode !== 515 &&
+                             statusCode !== 401;
+      
       console.log('Deve reconectar:', shouldReconnect);
       
       if (shouldReconnect) {
-        console.log('Tentando reconectar em 5 segundos...');
+        console.log('Tentando reconectar em 10 segundos...');
         setTimeout(() => {
           console.log('Iniciando reconexão...');
+          // Limpar sessão atual antes de reconectar
+          if (sessions[userId]) {
+            delete sessions[userId];
+          }
           getSession(userId, onQR);
-        }, 5000);
+        }, 10000); // Aumentar delay para 10 segundos
       } else {
-        console.log('Usuário fez logout, não reconectando');
+        console.log('Não reconectando - logout manual ou erro crítico');
         // Limpar sessão
         if (sessions[userId]) {
           delete sessions[userId];
