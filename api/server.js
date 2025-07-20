@@ -344,9 +344,6 @@ async function getSession(userId, onQR) {
   const sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
-    logger: {
-      level: 'error', // Reduzir logs para evitar spam
-    },
     browser: ['Isaura WhatsApp', 'Chrome', '1.0.0'],
     connectTimeoutMs: 60000, // Aumentar timeout para 60 segundos
     qrTimeout: 60000, // Timeout do QR Code para 60 segundos
