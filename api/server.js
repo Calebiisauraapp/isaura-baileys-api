@@ -353,145 +353,155 @@ async function getSession(userId, onQR) {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   let qrCode = null;
   let qrCallback = null;
+  let connectionAttempts = 0;
+  const maxAttempts = 3;
 
-  const sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: false,
-    browser: ['Isaura WhatsApp', 'Chrome', '1.0.0'],
-    connectTimeoutMs: 30000, // Reduzir timeout para 30 segundos
-    qrTimeout: 30000, // Timeout do QR Code para 30 segundos
-    retryRequestDelayMs: 2000,
-    maxRetries: 3,
-    emitOwnEvents: false,
-    shouldIgnoreJid: jid => isJidBroadcast(jid),
-    // Configurações para evitar erro 515
-    keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: false,
-    syncFullHistory: false,
-    fireInitQueries: true,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
-    },
-    patchMessageBeforeSending: (msg) => {
-      const requiresPatch = !!(
-        msg.buttonsMessage 
-        || msg.templateMessage
-        || msg.listMessage
-      );
-      if (requiresPatch) {
-        msg = {
-          viewOnceMessage: {
-            message: {
-              messageContextInfo: {
-                deviceListMetadataVersion: 2,
-                deviceList: {
-                  senderKeyHash: randomBytes(32),
-                  senderTimestamp: unixTimestampSeconds(),
-                  senderKeyIndexes: [0]
+  const createConnection = () => {
+    console.log(`Tentativa de conexão ${connectionAttempts + 1}/${maxAttempts}`);
+    
+    const sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false,
+      browser: ['Isaura WhatsApp', 'Chrome', '1.0.0'],
+      connectTimeoutMs: 30000,
+      qrTimeout: 30000,
+      retryRequestDelayMs: 2000,
+      maxRetries: 3,
+      emitOwnEvents: false,
+      shouldIgnoreJid: jid => isJidBroadcast(jid),
+      // Configurações para evitar erro 515
+      keepAliveIntervalMs: 25000,
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+      fireInitQueries: true,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger),
+      },
+      patchMessageBeforeSending: (msg) => {
+        const requiresPatch = !!(
+          msg.buttonsMessage 
+          || msg.templateMessage
+          || msg.listMessage
+        );
+        if (requiresPatch) {
+          msg = {
+            viewOnceMessage: {
+              message: {
+                messageContextInfo: {
+                  deviceListMetadataVersion: 2,
+                  deviceList: {
+                    senderKeyHash: randomBytes(32),
+                    senderTimestamp: unixTimestampSeconds(),
+                    senderKeyIndexes: [0]
+                  }
                 }
               },
               ...msg
             }
-          }
-        };
-      }
-      return msg;
-    },
-  });
+          };
+        }
+        return msg;
+      },
+    });
 
-  sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    
-    console.log('Status da conexão:', connection);
-    
-    if (qr) {
-      console.log('QR Code recebido do WhatsApp');
-      qrCode = qr;
-      if (onQR) {
-        qrCallback = onQR;
-        onQR(qr);
+    sock.ev.on('connection.update', (update) => {
+      const { connection, lastDisconnect, qr } = update;
+      
+      console.log('Status da conexão:', connection);
+      
+      if (qr) {
+        console.log('QR Code recebido do WhatsApp');
+        qrCode = qr;
+        if (onQR) {
+          qrCallback = onQR;
+          onQR(qr);
+        }
       }
-    }
-    
-    if (connection === 'close') {
-      console.log('Conexão WhatsApp fechada');
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      console.log('Código de desconexão:', statusCode);
       
-      // Não reconectar se foi logout manual ou erro 515
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut && 
-                             statusCode !== 515 &&
-                             statusCode !== 401;
-      
-      console.log('Deve reconectar:', shouldReconnect);
-      
-      if (shouldReconnect) {
-        console.log('Tentando reconectar em 10 segundos...');
-        setTimeout(() => {
-          console.log('Iniciando reconexão...');
-          // Limpar sessão atual antes de reconectar
+      if (connection === 'close') {
+        console.log('Conexão WhatsApp fechada');
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        console.log('Código de desconexão:', statusCode);
+        
+        // Se for erro 515 e ainda não tentou o máximo de vezes
+        if (statusCode === 515 && connectionAttempts < maxAttempts) {
+          connectionAttempts++;
+          console.log(`Erro 515 detectado. Tentativa ${connectionAttempts}/${maxAttempts}`);
+          
+          // Aguardar mais tempo antes de tentar novamente
+          setTimeout(() => {
+            console.log('Tentando nova conexão após erro 515...');
+            // Limpar sessão atual
+            if (sessions[userId]) {
+              delete sessions[userId];
+            }
+            // Criar nova conexão
+            const newSession = createConnection();
+            sessions[userId] = newSession;
+          }, 15000); // 15 segundos de espera
+        } else {
+          console.log('Não reconectando - máximo de tentativas atingido ou erro crítico');
+          // Limpar sessão
           if (sessions[userId]) {
             delete sessions[userId];
           }
-          getSession(userId, onQR);
-        }, 10000); // Aumentar delay para 10 segundos
-      } else {
-        console.log('Não reconectando - logout manual ou erro crítico');
-        // Limpar sessão
-        if (sessions[userId]) {
-          delete sessions[userId];
         }
       }
-    }
 
-    if (connection === 'open') {
-      console.log('Conexão WhatsApp estabelecida com sucesso!');
-      // Limpar QR code quando conectado
-      qrCode = null;
-      if (qrCallback) {
-        qrCallback = null;
+      if (connection === 'open') {
+        console.log('Conexão WhatsApp estabelecida com sucesso!');
+        // Resetar contador de tentativas
+        connectionAttempts = 0;
+        // Limpar QR code quando conectado
+        qrCode = null;
+        if (qrCallback) {
+          qrCallback = null;
+        }
       }
-    }
 
-    if (connection === 'connecting') {
-      console.log('Conectando ao WhatsApp...');
-    }
-  });
+      if (connection === 'connecting') {
+        console.log('Conectando ao WhatsApp...');
+      }
+    });
 
-  // Listener para mensagens recebidas
-  sock.ev.on('messages.upsert', async (msg) => {
-    try {
-      if (msg.type === 'notify' && msg.messages && msg.messages.length > 0) {
-        for (const m of msg.messages) {
-          if (m.message && m.key && m.key.remoteJid) {
-            const phone = m.key.remoteJid.replace(/@s\.whatsapp\.net$/, '');
-            const content = m.message.conversation || 
-                          m.message.extendedTextMessage?.text || 
-                          '[mensagem não suportada]';
+    // Listener para mensagens recebidas
+    sock.ev.on('messages.upsert', async (msg) => {
+      try {
+        if (msg.type === 'notify' && msg.messages && msg.messages.length > 0) {
+          for (const m of msg.messages) {
+            if (m.message && m.key && m.key.remoteJid) {
+              const phone = m.key.remoteJid.replace(/@s\.whatsapp\.net$/, '');
+              const content = m.message.conversation || 
+                            m.message.extendedTextMessage?.text || 
+                            '[mensagem não suportada]';
 
-            console.log(`Mensagem recebida de ${phone}: ${content}`);
+              console.log(`Mensagem recebida de ${phone}: ${content}`);
 
-            // Processar mensagem com IA
-            const aiResponse = await processMessageWithAI(content, userId, phone);
-            
-            // Enviar resposta
-            await sock.sendMessage(m.key.remoteJid, { text: aiResponse });
+              // Processar mensagem com IA
+              const aiResponse = await processMessageWithAI(content, userId, phone);
+              
+              // Enviar resposta
+              await sock.sendMessage(m.key.remoteJid, { text: aiResponse });
 
-            // Processar ações automáticas baseadas na resposta da IA
-            await processAutomaticActions(userId, phone, content, aiResponse);
+              // Processar ações automáticas baseadas na resposta da IA
+              await processAutomaticActions(userId, phone, content, aiResponse);
+            }
           }
         }
+      } catch (error) {
+        console.error('Erro ao processar mensagem recebida:', error);
       }
-    } catch (error) {
-      console.error('Erro ao processar mensagem recebida:', error);
-    }
-  });
+    });
 
-  sessions[userId] = { sock, qrCode, qrCallback };
-  return sessions[userId];
+    return { sock, qrCode, qrCallback };
+  };
+
+  const session = createConnection();
+  sessions[userId] = session;
+  return session;
 }
 
 // Função para processar ações automáticas
