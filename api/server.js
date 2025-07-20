@@ -118,9 +118,67 @@ async function processMessageWithAI(message, userId, clientPhone) {
 // Função para chamar Google AI
 async function callGoogleAI(message, context) {
   try {
+    console.log('callGoogleAI iniciado com contexto:', context);
+    
     const salonInfo = context.salon_info;
-    const services = context.services;
+    const services = context.services || [];
     const existingClient = context.existing_client;
+
+    // Se não há informações do salão, usar prompt básico
+    if (!salonInfo) {
+      console.log('Usando prompt básico - sem informações do salão');
+      const basicPrompt = `Você é um assistente virtual amigável e profissional.
+
+INSTRUÇÕES:
+1. Seja sempre educado e profissional
+2. Use emojis para tornar a conversa mais amigável
+3. Responda em português brasileiro
+4. Seja conciso mas completo
+5. Seja natural e conversacional
+
+MENSAGEM DO CLIENTE:
+${message}
+
+RESPONDA DE FORMA NATURAL E AMIGÁVEL:`;
+
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GOOGLE_AI_MODEL}:generateContent`,
+        {
+          contents: [
+            {
+              parts: [
+                {
+                  text: basicPrompt,
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 1024,
+          },
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${GOOGLE_AI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const candidates = response.data.candidates;
+      if (candidates && candidates.length > 0) {
+        const content = candidates[0].content;
+        const parts = content.parts;
+        if (parts && parts.length > 0) {
+          return parts[0].text;
+        }
+      }
+
+      return 'Olá! Como posso ajudá-lo hoje? 😊';
+    }
 
     // Usar prompts personalizados do usuário ou padrões
     const mainPrompt = salonInfo.ai_main_prompt || `Você é ${salonInfo.ai_agent_name || 'Assistente'}, assistente virtual do salão ${salonInfo.salon_name || 'Salão'}.
@@ -223,6 +281,7 @@ ${message}
 
 RESPONDA DE FORMA NATURAL E AMIGÁVEL:`;
 
+    console.log('Chamando Google AI com prompt completo...');
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/${GOOGLE_AI_MODEL}:generateContent`,
       {
