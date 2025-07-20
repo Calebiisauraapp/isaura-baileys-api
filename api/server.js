@@ -82,13 +82,20 @@ async function supabaseRequest(endpoint, method = 'GET', data = null) {
         return response.data;
       } catch (retryError) {
         console.error('Erro na segunda tentativa:', retryError.response?.status);
-        // Retornar array vazio em caso de erro
-        return [];
+        // Para operações de leitura, retornar array vazio
+        if (method === 'GET') {
+          return [];
+        }
+        // Para operações de escrita, não falhar
+        return null;
       }
     }
     
-    // Para outros erros, retornar array vazio
-    return [];
+    // Para outros erros, retornar array vazio para leitura ou null para escrita
+    if (method === 'GET') {
+      return [];
+    }
+    return null;
   }
 }
 
@@ -174,178 +181,57 @@ async function processMessageWithAI(message, userId, clientPhone) {
 // Função para chamar Google AI
 async function callGoogleAI(message, context) {
   try {
-    console.log('callGoogleAI iniciado com contexto:', context);
+    console.log('callGoogleAI iniciado com mensagem:', message);
+    console.log('Contexto:', JSON.stringify(context, null, 2));
     
-    const salonInfo = context.salon_info;
-    const services = context.services || [];
-    const existingClient = context.existing_client;
+    // Construir prompt baseado no contexto
+    let prompt = '';
+    
+    if (context.salon_info) {
+      prompt = `Você é o assistente virtual do salão "${context.salon_info.salon_name}". 
+      
+Informações do salão:
+- Nome: ${context.salon_info.salon_name}
+- Endereço: ${context.salon_info.address || 'Não informado'}
+- Telefone: ${context.salon_info.phone || 'Não informado'}
 
-    // Se não há informações do salão, usar prompt básico
-    if (!salonInfo) {
-      console.log('Usando prompt básico - sem informações do salão');
-      const basicPrompt = `Você é um assistente virtual amigável e profissional.
+Serviços disponíveis:
+${context.services && context.services.length > 0 
+  ? context.services.map(s => `- ${s.name}: R$ ${s.price} (${s.duration_minutes}min)`).join('\n')
+  : 'Nenhum serviço cadastrado ainda'}
 
-INSTRUÇÕES:
-1. Seja sempre educado e profissional
-2. Use emojis para tornar a conversa mais amigável
-3. Responda em português brasileiro
-4. Seja conciso mas completo
-5. Seja natural e conversacional
+Cliente: ${context.client_phone}
+${context.existing_client ? `Nome: ${context.existing_client.name || 'Não informado'}` : 'Novo cliente'}
 
-MENSAGEM DO CLIENTE:
-${message}
+Mensagem do cliente: "${message}"
 
-RESPONDA DE FORMA NATURAL E AMIGÁVEL:`;
+Responda de forma natural, educada e profissional. Seja útil e ofereça ajuda com agendamentos, informações sobre serviços ou outras dúvidas sobre o salão.`;
+    } else {
+      // Fallback se não há dados do salão
+      prompt = `Você é um assistente virtual amigável para um salão de beleza.
 
-      const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GOOGLE_AI_MODEL}:generateContent`,
-        {
-          contents: [
-            {
-              parts: [
-                {
-                  text: basicPrompt,
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 1024,
-          },
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${GOOGLE_AI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+Mensagem do cliente: "${message}"
 
-      const candidates = response.data.candidates;
-      if (candidates && candidates.length > 0) {
-        const content = candidates[0].content;
-        const parts = content.parts;
-        if (parts && parts.length > 0) {
-          return parts[0].text;
-        }
-      }
+Responda de forma natural, educada e profissional. Seja útil e ofereça ajuda com agendamentos, informações sobre serviços ou outras dúvidas sobre o salão.
 
-      return 'Olá! Como posso ajudá-lo hoje? 😊';
+Exemplos de respostas:
+- Para "oi", "olá": "Olá! Como posso ajudá-lo hoje? 😊"
+- Para "agendar": "Claro! Posso ajudá-lo a agendar um horário. Que serviço você gostaria?"
+- Para "preços": "Posso informar sobre nossos serviços e preços. Que tipo de serviço você tem interesse?"
+- Para "horário": "Posso verificar nossa disponibilidade. Que dia e horário você prefere?"`;
     }
 
-    // Usar prompts personalizados do usuário ou padrões
-    const mainPrompt = salonInfo.ai_main_prompt || `Você é ${salonInfo.ai_agent_name || 'Assistente'}, assistente virtual do salão ${salonInfo.salon_name || 'Salão'}.
+    console.log('Prompt construído:', prompt);
 
-INFORMAÇÕES DO SALÃO:
-- Nome: ${salonInfo.salon_name || 'Não informado'}
-- Endereço: ${salonInfo.address || 'Não informado'}
-- Telefone: ${salonInfo.phone || 'Não informado'}
-
-SERVIÇOS DISPONÍVEIS:
-${services.map(s => `• ${s.name} - R$ ${s.price} (${s.duration_minutes}min)`).join('\n')}
-
-${existingClient ? `
-INFORMAÇÕES DO CLIENTE:
-- Nome: ${existingClient.name || 'Não informado'}
-- Última visita: ${existingClient.last_visit || 'Primeira vez'}
-- Total gasto: R$ ${existingClient.total_spent || '0.00'}
-` : ''}
-
-POLÍTICAS:
-- Agendamentos podem ser cancelados até 24h antes
-- Reagendamentos são permitidos com antecedência
-- Pagamentos podem ser feitos em dinheiro, cartão ou PIX
-- Aceitamos cancelamentos por WhatsApp
-
-INSTRUÇÕES:
-1. Seja sempre educado e profissional
-2. Use emojis para tornar a conversa mais amigável
-3. Confirme dados antes de agendar
-4. Ofereça apenas horários disponíveis
-5. Não invente informações
-6. Responda em português brasileiro
-7. Seja conciso mas completo
-8. Se for agendamento, peça: nome, serviço, data e horário preferido
-9. Se for consulta, responda com informações precisas
-10. Se for cancelamento, confirme e agradeça
-
-MENSAGEM DO CLIENTE:
-${message}
-
-RESPONDA DE FORMA NATURAL E AMIGÁVEL:`;
-
-    const collectionPrompt = salonInfo.ai_collection_prompt || `Quando abordar pagamentos pendentes, seja educado e profissional:
-
-DIRETRIZES PARA COBRANÇA:
-- Seja sempre cordial e respeitoso
-- Explique claramente o valor e vencimento
-- Ofereça opções de pagamento (PIX, cartão, dinheiro)
-- Não seja insistente ou agressivo
-- Agradeça a preferência do cliente
-- Ofereça ajuda em caso de dúvidas
-- Mantenha um tom amigável e profissional`;
-
-    const retentionPrompt = salonInfo.ai_retention_prompt || `Para fidelizar clientes e aumentar retorno:
-
-ESTRATÉGIAS DE RETENÇÃO:
-- Lembre-se do histórico do cliente
-- Ofereça serviços complementares
-- Sugira agendamentos futuros
-- Comemore aniversários e datas especiais
-- Ofereça descontos para clientes fiéis
-- Mantenha contato periódico
-- Agradeça sempre a preferência`;
-
-    // Determinar qual prompt usar baseado no contexto da mensagem
-    let selectedPrompt = mainPrompt;
-    
-    if (message.toLowerCase().includes('pagamento') || 
-        message.toLowerCase().includes('pagar') || 
-        message.toLowerCase().includes('cobrança') ||
-        message.toLowerCase().includes('vencimento')) {
-      selectedPrompt = collectionPrompt;
-    } else if (message.toLowerCase().includes('retorno') || 
-               message.toLowerCase().includes('fidelizar') ||
-               message.toLowerCase().includes('oferta') ||
-               message.toLowerCase().includes('desconto')) {
-      selectedPrompt = retentionPrompt;
-    }
-
-    // Construir prompt final com contexto
-    const finalPrompt = `${selectedPrompt}
-
-INFORMAÇÕES DO SALÃO:
-- Nome: ${salonInfo.salon_name || 'Não informado'}
-- Endereço: ${salonInfo.address || 'Não informado'}
-- Telefone: ${salonInfo.phone || 'Não informado'}
-
-SERVIÇOS DISPONÍVEIS:
-${services.map(s => `• ${s.name} - R$ ${s.price} (${s.duration_minutes}min)`).join('\n')}
-
-${existingClient ? `
-INFORMAÇÕES DO CLIENTE:
-- Nome: ${existingClient.name || 'Não informado'}
-- Última visita: ${existingClient.last_visit || 'Primeira vez'}
-- Total gasto: R$ ${existingClient.total_spent || '0.00'}
-` : ''}
-
-MENSAGEM DO CLIENTE:
-${message}
-
-RESPONDA DE FORMA NATURAL E AMIGÁVEL:`;
-
-    console.log('Chamando Google AI com prompt completo...');
+    // Chamar Google AI API
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GOOGLE_AI_MODEL}:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GOOGLE_AI_MODEL}:generateContent?key=${GOOGLE_AI_API_KEY}`,
       {
         contents: [
           {
             parts: [
               {
-                text: finalPrompt,
+                text: prompt
               }
             ]
           }
@@ -356,28 +242,61 @@ RESPONDA DE FORMA NATURAL E AMIGÁVEL:`;
           topP: 0.95,
           maxOutputTokens: 1024,
         },
+        safetySettings: [
+          {
+            category: 'HARM_CATEGORY_HARASSMENT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+          {
+            category: 'HARM_CATEGORY_HATE_SPEECH',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+          {
+            category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+          {
+            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+        ],
       },
       {
         headers: {
-          'Authorization': `Bearer ${GOOGLE_AI_API_KEY}`,
           'Content-Type': 'application/json',
         },
+        timeout: 30000
       }
     );
 
-    const candidates = response.data.candidates;
-    if (candidates && candidates.length > 0) {
-      const content = candidates[0].content;
-      const parts = content.parts;
-      if (parts && parts.length > 0) {
-        return parts[0].text;
+    console.log('Resposta do Google AI:', response.status, response.data);
+
+    if (response.data && response.data.candidates && response.data.candidates.length > 0) {
+      const candidate = response.data.candidates[0];
+      if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+        const aiResponse = candidate.content.parts[0].text;
+        console.log('Resposta da IA extraída:', aiResponse);
+        return aiResponse;
       }
     }
 
-    return 'Desculpe, não consegui processar sua mensagem no momento.';
+    console.log('Resposta inválida da IA, usando fallback');
+    return 'Olá! Como posso ajudá-lo hoje? 😊';
+    
   } catch (error) {
-    console.error('Erro ao chamar Google AI:', error);
-    return 'Desculpe, ocorreu um erro ao processar sua mensagem.';
+    console.error('Erro ao chamar Google AI:', error.response?.status, error.response?.data);
+    
+    // Fallback para mensagens simples
+    const lowerMessage = message.toLowerCase();
+    if (lowerMessage.includes('oi') || lowerMessage.includes('olá') || lowerMessage.includes('ola')) {
+      return 'Olá! Como posso ajudá-lo hoje? 😊';
+    } else if (lowerMessage.includes('agendar') || lowerMessage.includes('marcar')) {
+      return 'Claro! Posso ajudá-lo a agendar um horário. Que serviço você gostaria?';
+    } else if (lowerMessage.includes('preço') || lowerMessage.includes('valor')) {
+      return 'Posso informar sobre nossos serviços e preços. Que tipo de serviço você tem interesse?';
+    } else {
+      return 'Olá! Como posso ajudá-lo hoje? 😊';
+    }
   }
 }
 
