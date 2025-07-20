@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, isJidBroadcast } = require('@whiskeysockets/baileys');
 const express = require('express');
 const qrcode = require('qrcode');
 const fs = require('fs');
@@ -8,6 +8,8 @@ const cors = require('cors');
 const cron = require('node-cron');
 const moment = require('moment');
 require('dotenv').config();
+const { randomBytes } = require('crypto');
+const { unixTimestampSeconds } = require('@whiskeysockets/baileys/lib/Utils/generics');
 
 const app = express();
 app.use(cors());
@@ -345,14 +347,45 @@ async function getSession(userId, onQR) {
     auth: state,
     printQRInTerminal: false,
     browser: ['Isaura WhatsApp', 'Chrome', '1.0.0'],
-    connectTimeoutMs: 60000, // Aumentar timeout para 60 segundos
-    qrTimeout: 60000, // Timeout do QR Code para 60 segundos
+    connectTimeoutMs: 30000, // Reduzir timeout para 30 segundos
+    qrTimeout: 30000, // Timeout do QR Code para 30 segundos
+    retryRequestDelayMs: 2000,
+    maxRetries: 3,
+    emitOwnEvents: false,
+    shouldIgnoreJid: jid => isJidBroadcast(jid),
+    patchMessageBeforeSending: (msg) => {
+      const requiresPatch = !!(
+        msg.buttonsMessage 
+        || msg.templateMessage
+        || msg.listMessage
+      );
+      if (requiresPatch) {
+        msg = {
+          viewOnceMessage: {
+            message: {
+              messageContextInfo: {
+                deviceListMetadataVersion: 2,
+                deviceList: {
+                  senderKeyHash: randomBytes(32),
+                  senderTimestamp: unixTimestampSeconds(),
+                  senderKeyIndexes: [0]
+                }
+              },
+              ...msg
+            }
+          }
+        };
+      }
+      return msg;
+    },
   });
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
+    
+    console.log('Status da conexão:', connection);
     
     if (qr) {
       console.log('QR Code recebido do WhatsApp');
@@ -365,16 +398,35 @@ async function getSession(userId, onQR) {
     
     if (connection === 'close') {
       console.log('Conexão WhatsApp fechada');
-      if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-        console.log('Tentando reconectar...');
+      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+      console.log('Deve reconectar:', shouldReconnect);
+      
+      if (shouldReconnect) {
+        console.log('Tentando reconectar em 5 segundos...');
         setTimeout(() => {
+          console.log('Iniciando reconexão...');
           getSession(userId, onQR);
         }, 5000);
+      } else {
+        console.log('Usuário fez logout, não reconectando');
+        // Limpar sessão
+        if (sessions[userId]) {
+          delete sessions[userId];
+        }
       }
     }
 
     if (connection === 'open') {
-      console.log('Conexão WhatsApp estabelecida');
+      console.log('Conexão WhatsApp estabelecida com sucesso!');
+      // Limpar QR code quando conectado
+      qrCode = null;
+      if (qrCallback) {
+        qrCallback = null;
+      }
+    }
+
+    if (connection === 'connecting') {
+      console.log('Conectando ao WhatsApp...');
     }
   });
 
