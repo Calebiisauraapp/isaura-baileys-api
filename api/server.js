@@ -64,18 +64,29 @@ async function supabaseRequest(endpoint, method = 'GET', data = null) {
 // Função para processar mensagem com IA
 async function processMessageWithAI(message, userId, clientPhone) {
   try {
+    console.log(`processMessageWithAI iniciado - userId: ${userId}, clientPhone: ${clientPhone}`);
+    
     // Buscar informações do usuário (salão)
+    console.log('Buscando informações do usuário...');
     const userData = await supabaseRequest(`users?id=eq.${userId}&select=*`);
+    console.log('Resultado da busca do usuário:', userData);
+    
     if (!userData || userData.length === 0) {
+      console.log('Usuário não encontrado no Supabase');
       return 'Desculpe, não consegui acessar as informações do salão.';
     }
     const user = userData[0];
+    console.log('Usuário encontrado:', user.salon_name);
 
     // Buscar serviços disponíveis
+    console.log('Buscando serviços...');
     const services = await supabaseRequest(`services?user_id=eq.${userId}&is_active=eq.true&select=*`);
+    console.log('Serviços encontrados:', services?.length || 0);
 
     // Buscar cliente existente
+    console.log('Buscando cliente existente...');
     const existingClient = await supabaseRequest(`clients?user_id=eq.${userId}&phone=eq.${clientPhone}&select=*`);
+    console.log('Cliente existente:', existingClient);
 
     // Construir contexto para a IA
     const context = {
@@ -86,8 +97,10 @@ async function processMessageWithAI(message, userId, clientPhone) {
       message: message
     };
 
+    console.log('Chamando Google AI...');
     // Chamar Google AI
     const aiResponse = await callGoogleAI(message, context);
+    console.log('Resposta do Google AI:', aiResponse);
     
     // Salvar mensagens no banco
     await saveWhatsAppMessages(userId, clientPhone, message, aiResponse, existingClient?.[0]?.id);
@@ -470,6 +483,8 @@ async function getSession(userId, onQR) {
     // Listener para mensagens recebidas
     sock.ev.on('messages.upsert', async (msg) => {
       try {
+        console.log('Mensagem recebida:', JSON.stringify(msg, null, 2));
+        
         if (msg.type === 'notify' && msg.messages && msg.messages.length > 0) {
           for (const m of msg.messages) {
             if (m.message && m.key && m.key.remoteJid) {
@@ -479,12 +494,17 @@ async function getSession(userId, onQR) {
                             '[mensagem não suportada]';
 
               console.log(`Mensagem recebida de ${phone}: ${content}`);
+              console.log(`Processando para usuário: ${userId}`);
 
               // Processar mensagem com IA
+              console.log('Chamando processMessageWithAI...');
               const aiResponse = await processMessageWithAI(content, userId, phone);
+              console.log('Resposta da IA:', aiResponse);
               
               // Enviar resposta
+              console.log('Enviando resposta...');
               await sock.sendMessage(m.key.remoteJid, { text: aiResponse });
+              console.log('Resposta enviada com sucesso');
 
               // Processar ações automáticas baseadas na resposta da IA
               await processAutomaticActions(userId, phone, content, aiResponse);
