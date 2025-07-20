@@ -53,11 +53,42 @@ async function supabaseRequest(endpoint, method = 'GET', data = null) {
       data
     };
 
+    console.log(`Supabase request: ${method} ${endpoint}`);
     const response = await axios(config);
+    console.log(`Supabase response: ${response.status}`);
     return response.data;
   } catch (error) {
-    console.error('Erro Supabase:', error.response?.data || error.message);
-    throw error;
+    console.error('Erro Supabase:', error.response?.status, error.response?.data);
+    
+    // Se for erro de autenticação, tentar sem alguns headers
+    if (error.response?.status === 401) {
+      console.log('Tentando sem Prefer header...');
+      try {
+        const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
+        const headers = {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
+        };
+
+        const config = {
+          method,
+          url,
+          headers,
+          data
+        };
+
+        const response = await axios(config);
+        return response.data;
+      } catch (retryError) {
+        console.error('Erro na segunda tentativa:', retryError.response?.status);
+        // Retornar array vazio em caso de erro
+        return [];
+      }
+    }
+    
+    // Para outros erros, retornar array vazio
+    return [];
   }
 }
 
@@ -68,32 +99,49 @@ async function processMessageWithAI(message, userId, clientPhone) {
     
     // Buscar informações do usuário (salão)
     console.log('Buscando informações do usuário...');
-    const userData = await supabaseRequest(`users?id=eq.${userId}&select=*`);
-    console.log('Resultado da busca do usuário:', userData);
-    
-    if (!userData || userData.length === 0) {
-      console.log('Usuário não encontrado no Supabase');
-      return 'Desculpe, não consegui acessar as informações do salão.';
+    let userData = [];
+    try {
+      userData = await supabaseRequest(`users?id=eq.${userId}&select=*`);
+      console.log('Resultado da busca do usuário:', userData);
+    } catch (error) {
+      console.log('Erro ao buscar usuário, continuando sem dados do salão...');
     }
-    const user = userData[0];
-    console.log('Usuário encontrado:', user.salon_name);
+    
+    let user = null;
+    if (userData && userData.length > 0) {
+      user = userData[0];
+      console.log('Usuário encontrado:', user.salon_name);
+    } else {
+      console.log('Usuário não encontrado, usando configuração padrão');
+    }
 
     // Buscar serviços disponíveis
     console.log('Buscando serviços...');
-    const services = await supabaseRequest(`services?user_id=eq.${userId}&is_active=eq.true&select=*`);
-    console.log('Serviços encontrados:', services?.length || 0);
+    let services = [];
+    try {
+      services = await supabaseRequest(`services?user_id=eq.${userId}&is_active=eq.true&select=*`) || [];
+      console.log('Serviços encontrados:', services?.length || 0);
+    } catch (error) {
+      console.log('Erro ao buscar serviços, continuando sem serviços...');
+    }
 
     // Buscar cliente existente
     console.log('Buscando cliente existente...');
-    const existingClient = await supabaseRequest(`clients?user_id=eq.${userId}&phone=eq.${clientPhone}&select=*`);
-    console.log('Cliente existente:', existingClient);
+    let existingClient = null;
+    try {
+      const clientData = await supabaseRequest(`clients?user_id=eq.${userId}&phone=eq.${clientPhone}&select=*`);
+      existingClient = clientData && clientData.length > 0 ? clientData[0] : null;
+      console.log('Cliente existente:', existingClient);
+    } catch (error) {
+      console.log('Erro ao buscar cliente, continuando sem dados do cliente...');
+    }
 
     // Construir contexto para a IA
     const context = {
       salon_info: user,
       services: services || [],
       client_phone: clientPhone,
-      existing_client: existingClient && existingClient.length > 0 ? existingClient[0] : null,
+      existing_client: existingClient,
       message: message
     };
 
@@ -102,11 +150,19 @@ async function processMessageWithAI(message, userId, clientPhone) {
     const aiResponse = await callGoogleAI(message, context);
     console.log('Resposta do Google AI:', aiResponse);
     
-    // Salvar mensagens no banco
-    await saveWhatsAppMessages(userId, clientPhone, message, aiResponse, existingClient?.[0]?.id);
+    // Tentar salvar mensagens no banco (não bloquear se falhar)
+    try {
+      await saveWhatsAppMessages(userId, clientPhone, message, aiResponse, existingClient?.id);
+    } catch (error) {
+      console.log('Erro ao salvar mensagens, continuando...');
+    }
 
     // Processar ações automáticas baseadas na resposta da IA
-    await processAutomaticActions(userId, clientPhone, message, aiResponse);
+    try {
+      await processAutomaticActions(userId, clientPhone, message, aiResponse);
+    } catch (error) {
+      console.log('Erro ao processar ações automáticas, continuando...');
+    }
 
     return aiResponse;
   } catch (error) {
