@@ -473,29 +473,17 @@ async function getSession(userId, onQR) {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log('Código de desconexão:', statusCode);
         
-        // Se for erro 515 e ainda não tentou o máximo de vezes
-        if (statusCode === 515 && connectionAttempts < maxAttempts) {
-          connectionAttempts++;
-          console.log(`Erro 515 detectado. Tentativa ${connectionAttempts}/${maxAttempts}`);
-          
-          // Aguardar mais tempo antes de tentar novamente
-          setTimeout(() => {
-            console.log('Tentando nova conexão após erro 515...');
-            // Limpar sessão atual
-            if (sessions[userId]) {
-              delete sessions[userId];
-            }
-            // Criar nova conexão
-            const newSession = createConnection();
-            sessions[userId] = newSession;
-          }, 15000); // 15 segundos de espera
-        } else {
-          console.log('Não reconectando - máximo de tentativas atingido ou erro crítico');
-          // Limpar sessão
+        // Remover limite de tentativas: reconectar sempre que possível
+        setTimeout(() => {
+          console.log('Tentando reconectar WhatsApp...');
+          // Limpar sessão atual
           if (sessions[userId]) {
             delete sessions[userId];
           }
-        }
+          // Criar nova conexão
+          const newSession = createConnection();
+          sessions[userId] = newSession;
+        }, 15000); // 15 segundos de espera
       }
 
       if (connection === 'open') {
