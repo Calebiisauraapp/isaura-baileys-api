@@ -29,8 +29,8 @@ app.use(express.json());
 // Configurações
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://auyjantqdiacpsyznikw.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1eWphbnRxZGlhY3BzeXpuaWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2MjIyNzgsImV4cCI6MjA2ODE5ODI3OH0.jV-FktGEV6mdv0B9dIY-LXodXEa0oeRs5EULup5pWRA';
-const GOOGLE_AI_API_KEY = process.env.GOOGLE_AI_API_KEY || 'AIzaSyDOJuXfE9qg__A9f_o0ylVIdoc2GPtLH6c';
-const GOOGLE_AI_MODEL = process.env.GOOGLE_AI_MODEL || 'gemini-1.5-flash';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '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';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
 
 // Gerenciador de sessões por usuário
 const sessions = {};
@@ -152,10 +152,10 @@ async function processMessageWithAI(message, userId, clientPhone) {
       message: message
     };
 
-    console.log('Chamando Google AI...');
-    // Chamar Google AI
-    const aiResponse = await callGoogleAI(message, context);
-    console.log('Resposta do Google AI:', aiResponse);
+    console.log('Chamando OpenAI...');
+    // Chamar OpenAI
+    const aiResponse = await callOpenAI(message, context);
+    console.log('Resposta do OpenAI:', aiResponse);
     
     // Tentar salvar mensagens no banco (não bloquear se falhar)
     try {
@@ -178,10 +178,10 @@ async function processMessageWithAI(message, userId, clientPhone) {
   }
 }
 
-// Função para chamar Google AI
-async function callGoogleAI(message, context) {
+// Função para chamar OpenAI
+async function callOpenAI(message, context) {
   try {
-    console.log('callGoogleAI iniciado com mensagem:', message);
+    console.log('callOpenAI iniciado com mensagem:', message);
     console.log('Contexto:', JSON.stringify(context, null, 2));
     
     // Construir prompt baseado no contexto
@@ -205,7 +205,7 @@ ${context.existing_client ? `Nome: ${context.existing_client.name || 'Não infor
 
 Mensagem do cliente: "${message}"
 
-Responda de forma natural, educada e profissional. Seja útil e ofereça ajuda com agendamentos, informações sobre serviços ou outras dúvidas sobre o salão.`;
+Responda de forma natural, educada e profissional. Seja útil e ofereça ajuda com agendamentos, informações sobre serviços ou outras dúvidas sobre o salão. Use emojis moderadamente para tornar a conversa mais amigável.`;
     } else {
       // Fallback se não há dados do salão
       prompt = `Você é um assistente virtual amigável para um salão de beleza.
@@ -223,68 +223,46 @@ Exemplos de respostas:
 
     console.log('Prompt construído:', prompt);
 
-    // Chamar Google AI API
+    // Chamar OpenAI API
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GOOGLE_AI_MODEL}:generateContent?key=${GOOGLE_AI_API_KEY}`,
+      'https://api.openai.com/v1/chat/completions',
       {
-        contents: [
+        model: OPENAI_MODEL,
+        messages: [
           {
-            parts: [
-              {
-                text: prompt
-              }
-            ]
+            role: 'system',
+            content: 'Você é um assistente virtual profissional e educado para um salão de beleza. Responda sempre em português brasileiro.'
+          },
+          {
+            role: 'user',
+            content: prompt
           }
         ],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024,
-        },
-        safetySettings: [
-          {
-            category: 'HARM_CATEGORY_HARASSMENT',
-            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
-          },
-          {
-            category: 'HARM_CATEGORY_HATE_SPEECH',
-            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
-          },
-          {
-            category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
-          },
-          {
-            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
-          },
-        ],
+        temperature: 0.7,
+        max_tokens: 1024,
       },
       {
         headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
           'Content-Type': 'application/json',
         },
         timeout: 30000
       }
     );
 
-    console.log('Resposta do Google AI:', response.status, response.data);
+    console.log('Resposta do OpenAI:', response.status, response.data);
 
-    if (response.data && response.data.candidates && response.data.candidates.length > 0) {
-      const candidate = response.data.candidates[0];
-      if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
-        const aiResponse = candidate.content.parts[0].text;
-        console.log('Resposta da IA extraída:', aiResponse);
-        return aiResponse;
-      }
+    if (response.data && response.data.choices && response.data.choices.length > 0) {
+      const aiResponse = response.data.choices[0].message.content;
+      console.log('Resposta da IA extraída:', aiResponse);
+      return aiResponse;
     }
 
     console.log('Resposta inválida da IA, usando fallback');
     return 'Olá! Como posso ajudá-lo hoje? 😊';
     
   } catch (error) {
-    console.error('Erro ao chamar Google AI:', error.response?.status, error.response?.data);
+    console.error('Erro ao chamar OpenAI:', error.response?.status, error.response?.data);
     
     // Fallback para mensagens simples
     const lowerMessage = message.toLowerCase();
@@ -824,34 +802,90 @@ app.get('/', (req, res) => {
 
 // Gerar QR Code
 app.post('/api/qrcode', async (req, res) => {
+  console.log('[BAILEYS_API] ════════════════════════════════════════════════════');
+  console.log('[BAILEYS_API] POST /api/qrcode iniciado');
+  
   try {
     const { userId } = req.body;
     if (!userId) {
+      console.log('[BAILEYS_API] ❌ ERRO: userId não fornecido');
       return res.status(400).json({ error: 'userId é obrigatório' });
     }
 
-    console.log(`Gerando QR Code para usuário: ${userId}`);
+    console.log(`[BAILEYS_API] Gerando QR Code para usuário: ${userId}`);
+
+    // Se já tem sessão e conectado
+    if (sessions[userId] && sessions[userId].sock && sessions[userId].sock.user) {
+      console.log('[BAILEYS_API] ✅ Usuário já conectado');
+      return res.json({ 
+        success: true,
+        status: 'conectado',
+        userId: userId 
+      });
+    }
 
     let qrBase64 = null;
     let qrGenerated = false;
+    let connectionEstablished = false;
+
+    // Se já existe sessão conectada, retornar sucesso
+    if (sessions[userId] && sessions[userId].sock && sessions[userId].sock.user) {
+      console.log('[BAILEYS_API] ✅ Retornando usuário já conectado');
+      return res.json({ 
+        success: true,
+        status: 'conectado',
+        userId: userId 
+      });
+    }
+
+    // Se existe sessão mas não conectada, deletar para criar nova
+    if (sessions[userId]) {
+      console.log('[BAILEYS_API] 🗑️ Deletando sessão antiga não conectada');
+      delete sessions[userId];
+    }
 
     const session = await getSession(userId, async (qr) => {
       try {
-        console.log('QR Code recebido, convertendo para base64...');
+        console.log('[BAILEYS_API] 📱 QR Code recebido do WhatsApp, convertendo...');
         qrBase64 = await qrcode.toDataURL(qr);
         qrGenerated = true;
-        console.log('QR Code convertido com sucesso');
+        console.log('[BAILEYS_API] ✅ QR Code convertido para base64 com sucesso');
       } catch (error) {
-        console.error('Erro ao converter QR Code:', error);
+        console.error('[BAILEYS_API] ❌ Erro ao converter QR Code:', error);
       }
     });
 
-    // Aguardar um pouco para o QR Code ser gerado
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log('[BAILEYS_API] Aguardando QR Code ou conexão...');
+    console.log('[BAILEYS_API] Verificando status da sessão...');
 
-    // Se já estiver conectado
-    if (session.sock.user) {
-      console.log('Usuário já conectado');
+    // Aguardar até 10 segundos para QR Code ou conexão
+    for (let i = 0; i < 50; i++) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Verificar se já conectou
+      if (session.sock && session.sock.user) {
+        console.log('[BAILEYS_API] ✅ Usuário conectado durante espera');
+        connectionEstablished = true;
+        break;
+      }
+
+      // Verificar se QR Code foi gerado
+      if (session.qrCode) {
+        console.log('[BAILEYS_API] ✅ QR Code disponível');
+        try {
+          qrBase64 = await qrcode.toDataURL(session.qrCode);
+          qrGenerated = true;
+          console.log('[BAILEYS_API] ✅ QR Code convertido com sucesso');
+          break;
+        } catch (error) {
+          console.error('[BAILEYS_API] ❌ Erro ao converter QR Code:', error);
+        }
+      }
+    }
+
+    // Se conectou
+    if (connectionEstablished || session.sock.user) {
+      console.log('[BAILEYS_API] ✅ Retornando status: conectado');
       return res.json({ 
         success: true,
         status: 'conectado',
@@ -861,7 +895,7 @@ app.post('/api/qrcode', async (req, res) => {
 
     // Se tem QR Code
     if (qrBase64 && qrGenerated) {
-      console.log('QR Code gerado com sucesso');
+      console.log('[BAILEYS_API] ✅ Retornando QR Code gerado');
       return res.json({ 
         success: true,
         qrCode: qrBase64,
@@ -869,41 +903,52 @@ app.post('/api/qrcode', async (req, res) => {
       });
     }
 
-    console.log('QR Code não foi gerado, tentando novamente...');
+    console.log('[BAILEYS_API] ⚠️ QR Code não foi gerado após espera');
     
-    // Tentar novamente se não foi gerado
-    if (!qrGenerated) {
-      return res.json({ 
-        success: false,
-        error: 'QR Code não foi gerado. Tente novamente em alguns segundos.',
-        retry: true
-      });
-    }
-
     return res.json({ 
       success: false,
-      error: 'Erro ao gerar QR Code' 
+      error: 'QR Code não foi gerado. Tente novamente em alguns segundos.',
+      retry: true
     });
 
   } catch (error) {
-    console.error('Erro ao gerar QR Code:', error);
+    console.error('[BAILEYS_API] ❌ EXCEÇÃO ao gerar QR Code:');
+    console.error('[BAILEYS_API] Error:', error);
+    console.error('[BAILEYS_API] StackTrace:', error.stack);
     res.status(500).json({ error: error.message });
+  } finally {
+    console.log('[BAILEYS_API] ════════════════════════════════════════════════════');
   }
 });
 
 // Verificar status
 app.get('/api/status/:userId', async (req, res) => {
+  console.log('[BAILEYS_API] ════════════════════════════════════════════════════');
+  console.log('[BAILEYS_API] GET /api/status/:userId iniciado');
+  
   try {
     const { userId } = req.params;
+    console.log('[BAILEYS_API] Verificando status para userId: ${userId}');
+    
     const session = sessions[userId];
+    console.log('[BAILEYS_API] Sessão encontrada: ${!!session}');
     
     if (session && session.sock && session.sock.user) {
+      const phoneNumber = session.sock.user.id.split(':')[0];
+      const phoneFormatted = phoneNumber.replace('@', '');
+      
+      console.log('[BAILEYS_API] ✅ Usuário conectado');
+      console.log('[BAILEYS_API] Número do WhatsApp: ${phoneFormatted}');
+      
       res.json({ 
         success: true,
         status: 'conectado',
-        connected: true 
+        connected: true,
+        phoneNumber: phoneFormatted,
+        userId: session.sock.user.id
       });
     } else {
+      console.log('[BAILEYS_API] ❌ Usuário não conectado');
       res.json({ 
         success: true,
         status: 'desconectado',
@@ -911,8 +956,12 @@ app.get('/api/status/:userId', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Erro ao verificar status:', error);
+    console.error('[BAILEYS_API] ❌ ERRO ao verificar status:');
+    console.error('[BAILEYS_API] Error:', error);
+    console.error('[BAILEYS_API] StackTrace:', error.stack);
     res.status(500).json({ error: error.message });
+  } finally {
+    console.log('[BAILEYS_API] ════════════════════════════════════════════════════');
   }
 });
 

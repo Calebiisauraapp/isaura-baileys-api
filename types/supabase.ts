@@ -440,6 +440,42 @@ export type Database = {
           },
         ]
       }
+      plans: {
+        Row: {
+          billing_cycle: string
+          created_at: string | null
+          features: Json
+          id: string
+          is_active: boolean | null
+          name: string
+          price: number
+          price_id: string
+          total_annual: number | null
+        }
+        Insert: {
+          billing_cycle: string
+          created_at?: string | null
+          features: Json
+          id?: string
+          is_active?: boolean | null
+          name: string
+          price: number
+          price_id: string
+          total_annual?: number | null
+        }
+        Update: {
+          billing_cycle?: string
+          created_at?: string | null
+          features?: Json
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          price?: number
+          price_id?: string
+          total_annual?: number | null
+        }
+        Relationships: []
+      }
       services: {
         Row: {
           category: string | null
@@ -493,6 +529,27 @@ export type Database = {
           },
         ]
       }
+      subscription_client_mapping: {
+        Row: {
+          client_reference_id: string
+          created_at: string | null
+          id: string
+          subscription_id: string
+        }
+        Insert: {
+          client_reference_id: string
+          created_at?: string | null
+          id?: string
+          subscription_id: string
+        }
+        Update: {
+          client_reference_id?: string
+          created_at?: string | null
+          id?: string
+          subscription_id?: string
+        }
+        Relationships: []
+      }
       user_settings: {
         Row: {
           created_at: string | null
@@ -543,8 +600,11 @@ export type Database = {
           phone: string | null
           profile_photo_url: string | null
           salon_name: string
-          subscription_expires_at: string | null
-          subscription_plan: string | null
+          stripe_current_period_end: string | null
+          stripe_customer_id: string | null
+          stripe_price_id: string | null
+          stripe_subscription_id: string | null
+          subscription_status: string | null
           updated_at: string | null
           user_name: string | null
           zipcode: string | null
@@ -563,8 +623,11 @@ export type Database = {
           phone?: string | null
           profile_photo_url?: string | null
           salon_name: string
-          subscription_expires_at?: string | null
-          subscription_plan?: string | null
+          stripe_current_period_end?: string | null
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?: string | null
           updated_at?: string | null
           user_name?: string | null
           zipcode?: string | null
@@ -583,8 +646,11 @@ export type Database = {
           phone?: string | null
           profile_photo_url?: string | null
           salon_name?: string
-          subscription_expires_at?: string | null
-          subscription_plan?: string | null
+          stripe_current_period_end?: string | null
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?: string | null
           updated_at?: string | null
           user_name?: string | null
           zipcode?: string | null
