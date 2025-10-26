@@ -458,17 +458,9 @@ async function getSession(userId, onQR) {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log('Código de desconexão:', statusCode);
         
-        // Remover limite de tentativas: reconectar sempre que possível
-        setTimeout(() => {
-          console.log('Tentando reconectar WhatsApp...');
-          // Limpar sessão atual
-          if (sessions[userId]) {
-            delete sessions[userId];
-          }
-          // Criar nova conexão
-          const newSession = createConnection();
-          sessions[userId] = newSession;
-        }, 15000); // 15 segundos de espera
+        // NÃO reconectar automaticamente - usuário deve gerar novo QR Code
+        console.log('[BAILEYS_API] ⚠️ Conexão fechada. Não reconectando automaticamente.');
+        console.log('[BAILEYS_API] O usuário deve gerar um novo QR Code para reconectar.');
       }
 
       if (connection === 'open') {
@@ -935,17 +927,17 @@ app.get('/api/status/:userId', async (req, res) => {
   
   try {
     const { userId } = req.params;
-    console.log('[BAILEYS_API] Verificando status para userId: ${userId}');
+    console.log(`[BAILEYS_API] Verificando status para userId: ${userId}`);
     
     const session = sessions[userId];
-    console.log('[BAILEYS_API] Sessão encontrada: ${!!session}');
+    console.log(`[BAILEYS_API] Sessão encontrada: ${!!session}`);
     
     if (session && session.sock && session.sock.user) {
       const phoneNumber = session.sock.user.id.split(':')[0];
       const phoneFormatted = phoneNumber.replace('@', '');
       
       console.log('[BAILEYS_API] ✅ Usuário conectado');
-      console.log('[BAILEYS_API] Número do WhatsApp: ${phoneFormatted}');
+      console.log(`[BAILEYS_API] Número do WhatsApp: ${phoneFormatted}`);
       
       res.json({ 
         success: true,
