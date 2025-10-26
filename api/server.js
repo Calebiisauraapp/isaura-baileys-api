@@ -394,6 +394,12 @@ async function getSession(userId, onQR) {
   let qrCallback = null;
   let connectionAttempts = 0;
   const maxAttempts = 3;
+  
+  // Objeto para armazenar o QR Code na sessão
+  const sessionData = {
+    qrCode: null,
+    sock: null
+  };
 
   const createConnection = () => {
     console.log(`Tentativa de conexão ${connectionAttempts + 1}/${maxAttempts}`);
@@ -401,18 +407,19 @@ async function getSession(userId, onQR) {
     const sock = makeWASocket({
       auth: state,
       printQRInTerminal: false,
-      browser: ['Isaura WhatsApp', 'Chrome', '1.0.0'],
-      connectTimeoutMs: 30000,
-      qrTimeout: 30000,
-      retryRequestDelayMs: 2000,
-      maxRetries: 3,
+      browser: ['Chrome', 'Desktop', '10'],
+      connectTimeoutMs: 60000,
+      qrTimeout: 90000,
+      retryRequestDelayMs: 3000,
+      maxRetries: 5,
       emitOwnEvents: false,
       shouldIgnoreJid: jid => isJidBroadcast(jid),
       // Configurações para evitar erro 515
-      keepAliveIntervalMs: 25000,
+      keepAliveIntervalMs: 10000,
       markOnlineOnConnect: false,
       syncFullHistory: false,
       fireInitQueries: true,
+      generateHighQualityLinkPreview: false,
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger),
@@ -452,8 +459,10 @@ async function getSession(userId, onQR) {
       console.log('Status da conexão:', connection);
       
       if (qr) {
-        console.log('QR Code recebido do WhatsApp');
+        console.log('[BAILEYS_API] 📱 QR Code recebido do WhatsApp');
         qrCode = qr;
+        sessionData.qrCode = qr; // Armazenar na sessão
+        
         if (onQR) {
           qrCallback = onQR;
           onQR(qr);
@@ -522,7 +531,8 @@ async function getSession(userId, onQR) {
       }
     });
 
-    return { sock, qrCode, qrCallback };
+    sessionData.sock = sock;
+    return sessionData;
   };
 
   const session = createConnection();
@@ -864,8 +874,8 @@ app.post('/api/qrcode', async (req, res) => {
     console.log('[BAILEYS_API] Aguardando QR Code ou conexão...');
     console.log('[BAILEYS_API] Verificando status da sessão...');
 
-    // Aguardar até 10 segundos para QR Code ou conexão
-    for (let i = 0; i < 50; i++) {
+    // Aguardar até 20 segundos para QR Code ou conexão (100 iterações * 200ms)
+    for (let i = 0; i < 100; i++) {
       await new Promise(resolve => setTimeout(resolve, 200));
       
       // Verificar se já conectou
