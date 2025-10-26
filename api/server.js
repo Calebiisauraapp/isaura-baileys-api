@@ -33,11 +33,18 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
 
 // Verificar se variáveis estão configuradas
+console.log('[BAILEYS_API] ✅ Iniciando verificação de variáveis de ambiente...');
+console.log('[BAILEYS_API] SUPABASE_URL:', SUPABASE_URL ? '✅ configurado' : '❌ não configurado');
+console.log('[BAILEYS_API] SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? '✅ configurado' : '❌ não configurado');
+console.log('[BAILEYS_API] OPENAI_API_KEY:', OPENAI_API_KEY ? '✅ configurado' : '❌ não configurado');
+
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !OPENAI_API_KEY) {
   console.error('❌ ERRO: Variáveis de ambiente não configuradas!');
   console.error('Configure SUPABASE_URL, SUPABASE_ANON_KEY e OPENAI_API_KEY no arquivo .env');
   process.exit(1);
 }
+
+console.log('[BAILEYS_API] ✅ Todas as variáveis de ambiente estão configuradas!');
 
 // Gerenciador de sessões por usuário
 const sessions = {};
