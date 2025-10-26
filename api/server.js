@@ -27,10 +27,17 @@ app.use(cors());
 app.use(express.json());
 
 // Configurações
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://auyjantqdiacpsyznikw.supabase.co';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1eWphbnRxZGlhY3BzeXpuaWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2MjIyNzgsImV4cCI6MjA2ODE5ODI3OH0.jV-FktGEV6mdv0B9dIY-LXodXEa0oeRs5EULup5pWRA';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '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';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
+
+// Verificar se variáveis estão configuradas
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !OPENAI_API_KEY) {
+  console.error('❌ ERRO: Variáveis de ambiente não configuradas!');
+  console.error('Configure SUPABASE_URL, SUPABASE_ANON_KEY e OPENAI_API_KEY no arquivo .env');
+  process.exit(1);
+}
 
 // Gerenciador de sessões por usuário
 const sessions = {};
